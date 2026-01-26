@@ -1,0 +1,13 @@
+.chart-container-400 {
+  height: 400px;
+  position: relative; 
+}
+
+.chart-container-200 {
+  height: 200px;
+  position: relative; 
+}
+
+.navbar-nav .nav-link.active {
+  font-weight: bold;
+}
