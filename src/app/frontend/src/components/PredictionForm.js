@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Form, Button, Container, Row, Col, Card, Alert } from 'react-bootstrap';
+import { Form, Button, Container, Row, Col, Card, Alert, ProgressBar, Badge, ListGroup } from 'react-bootstrap';
 import { postPrediction } from '../api';
 
 const PredictionForm = () => {
@@ -71,6 +71,18 @@ const PredictionForm = () => {
         return vFeatures;
     };
 
+    const getRiskVariant = (riskLevel) => {
+        if (riskLevel === "High") return "danger";
+        if (riskLevel === "Medium") return "warning";
+        return "success";
+    };
+
+    const probPercent = predictionResult ? (predictionResult.fraud_probability * 100) : 0;
+    const confPercent = predictionResult ? (predictionResult.confidence * 100) : 0;
+
+    const topFeatures = predictionResult?.top_features || [];
+    const maxScore = topFeatures.length > 0 ? Math.max(...topFeatures.map(f => f.score)) : 1;
+
     return (
         <Container className="mt-4">
             <h2 className="mb-4">Predict Fraud</h2>
@@ -87,7 +99,7 @@ const PredictionForm = () => {
                                     value={formData.Time}
                                     onChange={handleChange}
                                     placeholder="Enter Time"
-                                    />
+                                />
                             </Form.Group>
                         </Col>
                         <Col md={6}>
@@ -104,6 +116,7 @@ const PredictionForm = () => {
                             </Form.Group>
                         </Col>
                     </Row>
+
                     <Row className="mb-3">
                         {renderVFeatures()}
                     </Row>
@@ -119,14 +132,56 @@ const PredictionForm = () => {
                     <Card className={`mt-4 p-3 ${predictionResult.prediction === 'Fraudulent' ? 'border-danger' : 'border-success'}`}>
                         <Card.Body>
                             <Card.Title className="text-center">Prediction Result</Card.Title>
-                            <p className="text-center h4">
+
+                            <div className="text-center mb-2">
+                                <Badge bg={getRiskVariant(predictionResult.risk_level)} className="px-3 py-2">
+                                    Risk Level: {predictionResult.risk_level}
+                                </Badge>
+                            </div>
+
+                            <p className="text-center h4 mb-2">
                                 Status: <span className={predictionResult.prediction === 'Fraudulent' ? 'text-danger' : 'text-success'}>
                                     {predictionResult.prediction}
                                 </span>
                             </p>
-                            <p className="text-center">
-                                Fraud Probability: <strong>{(predictionResult.fraud_probability * 100).toFixed(2)}%</strong>
-                            </p>
+
+                            <div className="mb-3">
+                                <div className="d-flex justify-content-between">
+                                    <span>Fraud Probability</span>
+                                    <strong>{probPercent.toFixed(2)}%</strong>
+                                </div>
+                                <ProgressBar now={probPercent} />
+                            </div>
+
+                            <div className="mb-4">
+                                <div className="d-flex justify-content-between">
+                                    <span>Confidence</span>
+                                    <strong>{confPercent.toFixed(2)}%</strong>
+                                </div>
+                                <ProgressBar now={confPercent} />
+                                <small className="text-muted">
+                                    Confidence is higher when the probability is far from 50%.
+                                </small>
+                            </div>
+
+                            <div>
+                                <h5 className="mb-2">Top Contributing Features (approx.)</h5>
+                                {topFeatures.length === 0 ? (
+                                    <small className="text-muted">No feature explanation available.</small>
+                                ) : (
+                                    <ListGroup>
+                                        {topFeatures.map((f) => (
+                                            <ListGroup.Item key={f.feature}>
+                                                <div className="d-flex justify-content-between">
+                                                    <strong>{f.feature}</strong>
+                                                    <span className="text-muted">value: {Number(f.value).toFixed(4)}</span>
+                                                </div>
+                                                <ProgressBar now={(f.score / maxScore) * 100} />
+                                            </ListGroup.Item>
+                                        ))}
+                                    </ListGroup>
+                                )}
+                            </div>
                         </Card.Body>
                     </Card>
                 )}

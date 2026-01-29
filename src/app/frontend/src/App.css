@@ -11,3 +11,24 @@
 .navbar-nav .nav-link.active {
   font-weight: bold;
 }
+
+.kpi-card {
+  border-radius: 12px;
+}
+
+.kpi-title {
+  font-size: 0.9rem;
+  color: #6c757d;
+  margin-bottom: 6px;
+}
+
+.kpi-value {
+  font-size: 1.8rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.kpi-subtext {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
