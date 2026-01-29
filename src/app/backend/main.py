@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import glob
 from sklearn.preprocessing import StandardScaler
+import numpy as np
+
 
 app =FastAPI()
 
@@ -110,43 +112,114 @@ async def get_data_summary():
         "fraud_percentage": (fraud_count / total_transactions * 100)
         if total_transactions > 0 else 0
     }
-
+    
 @app.post("/api/predict")
 async def predict_fraud(transaction_data: dict):
     if fraud_detection_model is None:
         raise HTTPException(status_code=500, detail="AI model not loaded.")
     if credit_card_data is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Credit card data not loaded, cannot get feature names."
-        )
+        raise HTTPException(status_code=500, detail="Credit card data not loaded, cannot get feature names.")
     if scaler is None:
         raise HTTPException(status_code=500, detail="Scaler not initialized.")
 
-    feature_columns = [
-        col for col in credit_card_data.columns if col not in ['Class']
-    ]
+    feature_columns = [col for col in credit_card_data.columns if col not in ['Class']]
 
-    # Create a DataFrame from the input, ensuring all expected features are present
+    # Create DataFrame from input
     input_df = pd.DataFrame([transaction_data])
-
-    # Reindex to ensure all model features are present, filling missing with 0 or appropriate default
-    # This is a simplified approach; a proper preprocessing pipeline should be used
     input_df = input_df.reindex(columns=feature_columns, fill_value=0)
 
-    # Scale the 'Time' and 'Amount' features
-    input_df[['Time', 'Amount']] = scaler.transform(input_df[['Time', 'Amount']])
-    
-    # Make prediction
-    prediction = fraud_detection_model.predict(input_df)
+    # Keep raw values for display (before scaling)
+    raw_values = input_df.iloc[0].to_dict()
 
-    # Assuming binary classification, outputting probability of fraud
-    fraud_probability = float(prediction[0][0])
+    # Scale Time & Amount
+    input_df[['Time', 'Amount']] = scaler.transform(input_df[['Time', 'Amount']])
+
+    # Predict probability
+    pred = fraud_detection_model.predict(input_df, verbose=0)
+    fraud_probability = float(pred[0][0])
+
+    # Risk level (simple thresholds)
+    if fraud_probability < 0.30:
+        risk_level = "Low"
+    elif fraud_probability < 0.70:
+        risk_level = "Medium"
+    else:
+        risk_level = "High"
+
+    # Confidence: distance from 0.5 (0..1)
+    confidence = float(abs(fraud_probability - 0.5) * 2)
+
+    # --- Explainability (approx): gradient-based contribution ---
+    # Works for most TF models. For a dummy/small model, it still works.
+    x = tf.convert_to_tensor(input_df.values.astype(np.float32))
+    with tf.GradientTape() as tape:
+        tape.watch(x)
+        y = fraud_detection_model(x, training=False)
+    grads = tape.gradient(y, x).numpy()[0]
+    x_val = x.numpy()[0]
+
+    # Contribution score per feature
+    contrib = np.abs(grads * x_val)
+
+    # Build top features (ignore near-zero)
+    feature_scores = []
+    for i, col in enumerate(feature_columns):
+        score = float(contrib[i])
+        if score > 1e-9:
+            feature_scores.append({
+                "feature": col,
+                "score": score,
+                "value": float(raw_values.get(col, 0))
+            })
+
+    feature_scores.sort(key=lambda d: d["score"], reverse=True)
+    top_features = feature_scores[:5]
 
     return {
         "fraud_probability": fraud_probability,
-        "prediction": "Fraudulent" if fraud_probability > 0.5 else "Legitimate"
+        "prediction": "Fraudulent" if fraud_probability > 0.5 else "Legitimate",
+        "risk_level": risk_level,
+        "confidence": confidence,
+        "top_features": top_features
     }
+
+
+# @app.post("/api/predict")
+# async def predict_fraud(transaction_data: dict):
+#     if fraud_detection_model is None:
+#         raise HTTPException(status_code=500, detail="AI model not loaded.")
+#     if credit_card_data is None:
+#         raise HTTPException(
+#             status_code=500,
+#             detail="Credit card data not loaded, cannot get feature names."
+#         )
+#     if scaler is None:
+#         raise HTTPException(status_code=500, detail="Scaler not initialized.")
+
+#     feature_columns = [
+#         col for col in credit_card_data.columns if col not in ['Class']
+#     ]
+
+#     # Create a DataFrame from the input, ensuring all expected features are present
+#     input_df = pd.DataFrame([transaction_data])
+
+#     # Reindex to ensure all model features are present, filling missing with 0 or appropriate default
+#     # This is a simplified approach; a proper preprocessing pipeline should be used
+#     input_df = input_df.reindex(columns=feature_columns, fill_value=0)
+
+#     # Scale the 'Time' and 'Amount' features
+#     input_df[['Time', 'Amount']] = scaler.transform(input_df[['Time', 'Amount']])
+    
+#     # Make prediction
+#     prediction = fraud_detection_model.predict(input_df)
+
+#     # Assuming binary classification, outputting probability of fraud
+#     fraud_probability = float(prediction[0][0])
+
+#     return {
+#         "fraud_probability": fraud_probability,
+#         "prediction": "Fraudulent" if fraud_probability > 0.5 else "Legitimate"
+#     }
 
 @app.get("/api/transactions")
 async def get_transactions(
